@@ -12,7 +12,7 @@ models:
 - name: gemini-3-1-pro
   display_name: Gemini 3.1 Pro
   use: langchain_google_genai:ChatGoogleGenerativeAI
-  model: gemini-3.1-pro
+  model: gemini-3.1-pro-preview
   vertexai: true
 
 - name: gemini-3-5-flash
@@ -31,16 +31,20 @@ models:
   display_name: Claude Opus 4.7
   use: langchain_google_vertexai.model_garden:ChatAnthropicVertex
   model: claude-opus-4-7
+  location: us-east5
 
 - name: claude-sonnet-4-6
   display_name: Claude Sonnet 4.6
   use: langchain_google_vertexai.model_garden:ChatAnthropicVertex
   model: claude-sonnet-4-6
+  location: us-east5
+
   
 - name: claude-haiku-4-5
   display_name: Claude Haiku 4.5
   use: langchain_google_vertexai.model_garden:ChatAnthropicVertex
   model: claude-haiku-4-5@20251001
+  location: us-east5
   
 tool_groups:
 - name: web
