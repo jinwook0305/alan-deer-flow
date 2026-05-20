@@ -363,6 +363,8 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
     max_concurrent_subagents = cfg.get("max_concurrent_subagents", 3)
     is_bootstrap = cfg.get("is_bootstrap", False)
     agent_name = validate_agent_name(cfg.get("agent_name"))
+    raw_disabled = cfg.get("disabled_tool_groups") or []
+    disabled_tool_groups: list[str] = list(raw_disabled) if isinstance(raw_disabled, (list, tuple)) else []
 
     agent_config = load_agent_config(agent_name) if not is_bootstrap else None
     available_skills = _available_skill_names(agent_config, is_bootstrap)
@@ -395,6 +397,18 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
     if "metadata" not in config:
         config["metadata"] = {}
 
+    # Compute effective tool groups by subtracting user-disabled groups from the
+    # base envelope (custom agent's tool_groups, or all configured groups for the default agent).
+    if disabled_tool_groups:
+        base_groups = (
+            list(agent_config.tool_groups)
+            if agent_config and agent_config.tool_groups is not None
+            else [g.name for g in resolved_app_config.tool_groups]
+        )
+        effective_tool_groups: list[str] | None = [g for g in base_groups if g not in disabled_tool_groups]
+    else:
+        effective_tool_groups = list(agent_config.tool_groups) if agent_config and agent_config.tool_groups is not None else None
+
     config["metadata"].update(
         {
             "agent_name": agent_name or "default",
@@ -403,7 +417,8 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
             "reasoning_effort": reasoning_effort,
             "is_plan_mode": is_plan_mode,
             "subagent_enabled": subagent_enabled,
-            "tool_groups": agent_config.tool_groups if agent_config else None,
+            "tool_groups": effective_tool_groups,
+            "disabled_tool_groups": disabled_tool_groups or None,
             "available_skills": sorted(available_skills) if available_skills is not None else None,
         }
     )
@@ -430,7 +445,7 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
     # The default agent (no agent_name) does not see this tool.
     extra_tools = [update_agent] if agent_name else []
     # Default lead agent (unchanged behavior)
-    tools = get_available_tools(model_name=model_name, groups=agent_config.tool_groups if agent_config else None, subagent_enabled=subagent_enabled, app_config=resolved_app_config)
+    tools = get_available_tools(model_name=model_name, groups=effective_tool_groups, subagent_enabled=subagent_enabled, app_config=resolved_app_config)
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled, reasoning_effort=reasoning_effort, app_config=resolved_app_config),
         tools=filter_tools_by_skill_allowed_tools(tools + extra_tools, skills_for_tool_policy),

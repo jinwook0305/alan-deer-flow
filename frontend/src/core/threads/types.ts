@@ -18,6 +18,7 @@ export interface AgentThreadContext extends Record<string, unknown> {
   reasoning_effort?: "minimal" | "low" | "medium" | "high";
   agent_name?: string;
   memory_enabled?: boolean;
+  disabled_tool_groups?: string[];
 }
 
 export interface AgentThread extends Thread<AgentThreadState> {

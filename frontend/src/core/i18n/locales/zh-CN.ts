@@ -89,6 +89,13 @@ export const zhCN: Translations = {
     chatMemory: "记忆",
     chatMemoryOn: "开",
     chatMemoryOff: "关",
+    tools: "工具",
+    toolGroups: {
+      web: "网络（搜索、抓取）",
+      "file:read": "文件读取",
+      "file:write": "文件写入",
+      bash: "Bash",
+    },
     flashMode: "闪速",
     flashModeDescription: "快速且高效的完成任务，但可能不够精准",
     reasoningMode: "思考",

@@ -90,6 +90,13 @@ export const enUS: Translations = {
     chatMemory: "Memory",
     chatMemoryOn: "On",
     chatMemoryOff: "Off",
+    tools: "Tools",
+    toolGroups: {
+      web: "Web (search, fetch)",
+      "file:read": "File read",
+      "file:write": "File write",
+      bash: "Bash",
+    },
     flashMode: "Flash",
     flashModeDescription: "Fast and efficient, but may not be accurate",
     reasoningMode: "Reasoning",

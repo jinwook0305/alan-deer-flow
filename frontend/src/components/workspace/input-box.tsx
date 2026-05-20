@@ -10,6 +10,7 @@ import {
   PlusIcon,
   SparklesIcon,
   RocketIcon,
+  WrenchIcon,
   XIcon,
   ZapIcon,
 } from "lucide-react";
@@ -87,6 +88,9 @@ import { Tooltip } from "./tooltip";
 
 type InputMode = "chat" | "flash" | "thinking" | "pro" | "ultra";
 
+const TOOL_GROUPS = ["web", "file:read", "file:write", "bash"] as const;
+type ToolGroup = (typeof TOOL_GROUPS)[number];
+
 function getResolvedMode(
   mode: InputMode | undefined,
   supportsThinking: boolean,
@@ -132,10 +136,12 @@ export function InputBox({
     | "thinking_enabled"
     | "subagent_enabled"
     | "memory_enabled"
+    | "disabled_tool_groups"
   > & {
     mode: "chat" | "flash" | "thinking" | "pro" | "ultra" | undefined;
     reasoning_effort?: "minimal" | "low" | "medium" | "high";
     memory_enabled?: boolean | undefined;
+    disabled_tool_groups?: string[] | undefined;
   };
   extraHeader?: React.ReactNode;
   /**
@@ -154,10 +160,12 @@ export function InputBox({
       | "thinking_enabled"
       | "subagent_enabled"
       | "memory_enabled"
+      | "disabled_tool_groups"
     > & {
       mode: "chat" | "flash" | "thinking" | "pro" | "ultra" | undefined;
       reasoning_effort?: "minimal" | "low" | "medium" | "high";
       memory_enabled?: boolean | undefined;
+      disabled_tool_groups?: string[] | undefined;
     },
   ) => void;
   onFollowupsVisibilityChange?: (visible: boolean) => void;
@@ -254,9 +262,25 @@ export function InputBox({
               : mode === "thinking"
                 ? "low"
                 : "minimal",
+        disabled_tool_groups: undefined,
       });
     },
     [onContextChange, context, supportThinking],
+  );
+
+  const handleToolGroupToggle = useCallback(
+    (group: ToolGroup) => {
+      const current = context.disabled_tool_groups ?? [];
+      const isDisabled = current.includes(group);
+      const next = isDisabled
+        ? current.filter((g) => g !== group)
+        : [...current, group];
+      onContextChange?.({
+        ...context,
+        disabled_tool_groups: next.length === 0 ? undefined : next,
+      });
+    },
+    [onContextChange, context],
   );
 
   const handleMemoryToggle = useCallback(
@@ -752,6 +776,56 @@ export function InputBox({
                 </DropdownMenuGroup>
               </PromptInputActionMenuContent>
             </PromptInputActionMenu>
+            {context.mode !== "chat" && (
+              <PromptInputActionMenu>
+                <PromptInputActionMenuTrigger className="gap-1! px-2!">
+                  <WrenchIcon className="size-3" />
+                  <div className="text-xs font-normal">
+                    {t.inputBox.tools}
+                    {context.disabled_tool_groups &&
+                      context.disabled_tool_groups.length > 0 &&
+                      ` (${TOOL_GROUPS.length - context.disabled_tool_groups.length}/${TOOL_GROUPS.length})`}
+                  </div>
+                </PromptInputActionMenuTrigger>
+                <PromptInputActionMenuContent className="w-64">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="text-muted-foreground text-xs">
+                      {t.inputBox.tools}
+                    </DropdownMenuLabel>
+                    <PromptInputActionMenu>
+                      {TOOL_GROUPS.map((group) => {
+                        const isEnabled = !(
+                          context.disabled_tool_groups ?? []
+                        ).includes(group);
+                        return (
+                          <PromptInputActionMenuItem
+                            key={group}
+                            className={cn(
+                              isEnabled
+                                ? "text-accent-foreground"
+                                : "text-muted-foreground/65",
+                            )}
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              handleToolGroupToggle(group);
+                            }}
+                          >
+                            <div className="font-medium">
+                              {t.inputBox.toolGroups[group]}
+                            </div>
+                            {isEnabled ? (
+                              <CheckIcon className="ml-auto size-4" />
+                            ) : (
+                              <div className="ml-auto size-4" />
+                            )}
+                          </PromptInputActionMenuItem>
+                        );
+                      })}
+                    </PromptInputActionMenu>
+                  </DropdownMenuGroup>
+                </PromptInputActionMenuContent>
+              </PromptInputActionMenu>
+            )}
             {context.mode === "chat" && (
               <PromptInputActionMenu>
                 <PromptInputActionMenuTrigger className="gap-1! px-2!">

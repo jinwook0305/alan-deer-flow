@@ -81,6 +81,13 @@ export interface Translations {
     chatMemory: string;
     chatMemoryOn: string;
     chatMemoryOff: string;
+    tools: string;
+    toolGroups: {
+      web: string;
+      "file:read": string;
+      "file:write": string;
+      bash: string;
+    };
     reasoningEffort: string;
     reasoningEffortMinimal: string;
     reasoningEffortMinimalDescription: string;

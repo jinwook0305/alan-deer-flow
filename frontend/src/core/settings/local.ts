@@ -14,6 +14,7 @@ export const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
     mode: undefined,
     reasoning_effort: undefined,
     memory_enabled: undefined,
+    disabled_tool_groups: undefined,
   },
 };
 
@@ -41,11 +42,13 @@ export interface LocalSettings {
     | "model_name"
     | "reasoning_effort"
     | "memory_enabled"
+    | "disabled_tool_groups"
   > & {
     model_name?: string | undefined;
     mode: "chat" | "flash" | "thinking" | "pro" | "ultra" | undefined;
     reasoning_effort?: "minimal" | "low" | "medium" | "high";
     memory_enabled?: boolean | undefined;
+    disabled_tool_groups?: string[] | undefined;
   };
 }
 
