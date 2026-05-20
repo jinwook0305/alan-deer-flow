@@ -1,3 +1,4 @@
+from .chat_agent import make_chat_agent
 from .factory import create_deerflow_agent
 from .features import Next, Prev, RuntimeFeatures
 from .lead_agent import make_lead_agent
@@ -15,6 +16,7 @@ __all__ = [
     "Next",
     "Prev",
     "make_lead_agent",
+    "make_chat_agent",
     "SandboxState",
     "ThreadState",
 ]

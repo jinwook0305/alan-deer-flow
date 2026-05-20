@@ -5,6 +5,7 @@ import {
   CheckIcon,
   GraduationCapIcon,
   LightbulbIcon,
+  MessageCircleIcon,
   PaperclipIcon,
   PlusIcon,
   SparklesIcon,
@@ -84,12 +85,18 @@ import { useThread } from "./messages/context";
 import { ModeHoverGuide } from "./mode-hover-guide";
 import { Tooltip } from "./tooltip";
 
-type InputMode = "flash" | "thinking" | "pro" | "ultra";
+type InputMode = "chat" | "flash" | "thinking" | "pro" | "ultra";
 
 function getResolvedMode(
   mode: InputMode | undefined,
   supportsThinking: boolean,
 ): InputMode {
+  // Chat mode is independent of thinking support — vanilla LLM chat doesn't
+  // care about extended thinking, and we don't want a non-thinking model to
+  // silently downgrade chat → flash.
+  if (mode === "chat") {
+    return "chat";
+  }
   if (!supportsThinking && mode !== "flash") {
     return "flash";
   }
@@ -120,10 +127,15 @@ export function InputBox({
   disabled?: boolean;
   context: Omit<
     AgentThreadContext,
-    "thread_id" | "is_plan_mode" | "thinking_enabled" | "subagent_enabled"
+    | "thread_id"
+    | "is_plan_mode"
+    | "thinking_enabled"
+    | "subagent_enabled"
+    | "memory_enabled"
   > & {
-    mode: "flash" | "thinking" | "pro" | "ultra" | undefined;
+    mode: "chat" | "flash" | "thinking" | "pro" | "ultra" | undefined;
     reasoning_effort?: "minimal" | "low" | "medium" | "high";
+    memory_enabled?: boolean | undefined;
   };
   extraHeader?: React.ReactNode;
   /**
@@ -137,10 +149,15 @@ export function InputBox({
   onContextChange?: (
     context: Omit<
       AgentThreadContext,
-      "thread_id" | "is_plan_mode" | "thinking_enabled" | "subagent_enabled"
+      | "thread_id"
+      | "is_plan_mode"
+      | "thinking_enabled"
+      | "subagent_enabled"
+      | "memory_enabled"
     > & {
-      mode: "flash" | "thinking" | "pro" | "ultra" | undefined;
+      mode: "chat" | "flash" | "thinking" | "pro" | "ultra" | undefined;
       reasoning_effort?: "minimal" | "low" | "medium" | "high";
+      memory_enabled?: boolean | undefined;
     },
   ) => void;
   onFollowupsVisibilityChange?: (visible: boolean) => void;
@@ -240,6 +257,16 @@ export function InputBox({
       });
     },
     [onContextChange, context, supportThinking],
+  );
+
+  const handleMemoryToggle = useCallback(
+    (enabled: boolean) => {
+      onContextChange?.({
+        ...context,
+        memory_enabled: enabled,
+      });
+    },
+    [onContextChange, context],
   );
 
   const handleReasoningEffortSelect = useCallback(
@@ -523,6 +550,7 @@ export function InputBox({
             <PromptInputActionMenu>
               <ModeHoverGuide
                 mode={
+                  context.mode === "chat" ||
                   context.mode === "flash" ||
                   context.mode === "thinking" ||
                   context.mode === "pro" ||
@@ -533,6 +561,9 @@ export function InputBox({
               >
                 <PromptInputActionMenuTrigger className="gap-1! px-2!">
                   <div>
+                    {context.mode === "chat" && (
+                      <MessageCircleIcon className="size-3" />
+                    )}
                     {context.mode === "flash" && <ZapIcon className="size-3" />}
                     {context.mode === "thinking" && (
                       <LightbulbIcon className="size-3" />
@@ -550,7 +581,8 @@ export function InputBox({
                       context.mode === "ultra" ? "golden-text" : "",
                     )}
                   >
-                    {(context.mode === "flash" && t.inputBox.flashMode) ||
+                    {(context.mode === "chat" && t.inputBox.chatMode) ||
+                      (context.mode === "flash" && t.inputBox.flashMode) ||
                       (context.mode === "thinking" &&
                         t.inputBox.reasoningMode) ||
                       (context.mode === "pro" && t.inputBox.proMode) ||
@@ -564,6 +596,35 @@ export function InputBox({
                     {t.inputBox.mode}
                   </DropdownMenuLabel>
                   <PromptInputActionMenu>
+                    <PromptInputActionMenuItem
+                      className={cn(
+                        context.mode === "chat"
+                          ? "text-accent-foreground"
+                          : "text-muted-foreground/65",
+                      )}
+                      onSelect={() => handleModeSelect("chat")}
+                    >
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-1 font-bold">
+                          <MessageCircleIcon
+                            className={cn(
+                              "mr-2 size-4",
+                              context.mode === "chat" &&
+                                "text-accent-foreground",
+                            )}
+                          />
+                          {t.inputBox.chatMode}
+                        </div>
+                        <div className="pl-7 text-xs">
+                          {t.inputBox.chatModeDescription}
+                        </div>
+                      </div>
+                      {context.mode === "chat" ? (
+                        <CheckIcon className="ml-auto size-4" />
+                      ) : (
+                        <div className="ml-auto size-4" />
+                      )}
+                    </PromptInputActionMenuItem>
                     <PromptInputActionMenuItem
                       className={cn(
                         context.mode === "flash"
@@ -691,7 +752,64 @@ export function InputBox({
                 </DropdownMenuGroup>
               </PromptInputActionMenuContent>
             </PromptInputActionMenu>
-            {supportReasoningEffort && context.mode !== "flash" && (
+            {context.mode === "chat" && (
+              <PromptInputActionMenu>
+                <PromptInputActionMenuTrigger className="gap-1! px-2!">
+                  <div className="text-xs font-normal">
+                    {t.inputBox.chatMemory}:{" "}
+                    {context.memory_enabled
+                      ? t.inputBox.chatMemoryOn
+                      : t.inputBox.chatMemoryOff}
+                  </div>
+                </PromptInputActionMenuTrigger>
+                <PromptInputActionMenuContent className="w-56">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="text-muted-foreground text-xs">
+                      {t.inputBox.chatMemory}
+                    </DropdownMenuLabel>
+                    <PromptInputActionMenu>
+                      <PromptInputActionMenuItem
+                        className={cn(
+                          context.memory_enabled
+                            ? "text-accent-foreground"
+                            : "text-muted-foreground/65",
+                        )}
+                        onSelect={() => handleMemoryToggle(true)}
+                      >
+                        <div className="font-bold">
+                          {t.inputBox.chatMemoryOn}
+                        </div>
+                        {context.memory_enabled ? (
+                          <CheckIcon className="ml-auto size-4" />
+                        ) : (
+                          <div className="ml-auto size-4" />
+                        )}
+                      </PromptInputActionMenuItem>
+                      <PromptInputActionMenuItem
+                        className={cn(
+                          !context.memory_enabled
+                            ? "text-accent-foreground"
+                            : "text-muted-foreground/65",
+                        )}
+                        onSelect={() => handleMemoryToggle(false)}
+                      >
+                        <div className="font-bold">
+                          {t.inputBox.chatMemoryOff}
+                        </div>
+                        {!context.memory_enabled ? (
+                          <CheckIcon className="ml-auto size-4" />
+                        ) : (
+                          <div className="ml-auto size-4" />
+                        )}
+                      </PromptInputActionMenuItem>
+                    </PromptInputActionMenu>
+                  </DropdownMenuGroup>
+                </PromptInputActionMenuContent>
+              </PromptInputActionMenu>
+            )}
+            {supportReasoningEffort &&
+              context.mode !== "flash" &&
+              context.mode !== "chat" && (
               <PromptInputActionMenu>
                 <PromptInputActionMenuTrigger className="gap-1! px-2!">
                   <div className="text-xs font-normal">

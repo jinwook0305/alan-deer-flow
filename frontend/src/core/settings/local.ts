@@ -13,6 +13,7 @@ export const DEFAULT_LOCAL_SETTINGS: LocalSettings = {
     model_name: undefined,
     mode: undefined,
     reasoning_effort: undefined,
+    memory_enabled: undefined,
   },
 };
 
@@ -39,10 +40,12 @@ export interface LocalSettings {
     | "subagent_enabled"
     | "model_name"
     | "reasoning_effort"
+    | "memory_enabled"
   > & {
     model_name?: string | undefined;
-    mode: "flash" | "thinking" | "pro" | "ultra" | undefined;
+    mode: "chat" | "flash" | "thinking" | "pro" | "ultra" | undefined;
     reasoning_effort?: "minimal" | "low" | "medium" | "high";
+    memory_enabled?: boolean | undefined;
   };
 }
 

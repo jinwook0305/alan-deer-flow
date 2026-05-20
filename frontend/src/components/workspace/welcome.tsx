@@ -15,7 +15,7 @@ export function Welcome({
   mode,
 }: {
   className?: string;
-  mode?: "ultra" | "pro" | "thinking" | "flash";
+  mode?: "ultra" | "pro" | "thinking" | "flash" | "chat";
 }) {
   const { t } = useI18n();
   const searchParams = useSearchParams();
