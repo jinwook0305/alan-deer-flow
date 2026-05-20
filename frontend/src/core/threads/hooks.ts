@@ -612,6 +612,10 @@ export function useThreadStream({
                 context.mode === "chat"
                   ? Boolean(context.memory_enabled)
                   : undefined,
+              disabled_tool_groups:
+                context.mode === "chat"
+                  ? undefined
+                  : context.disabled_tool_groups,
               thread_id: threadId,
             },
           },
