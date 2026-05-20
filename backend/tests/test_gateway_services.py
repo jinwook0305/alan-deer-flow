@@ -160,8 +160,8 @@ def test_build_run_config_context_custom_agent_injects_agent_name():
     assert "configurable" not in config
 
 
-def test_resolve_agent_factory_returns_make_lead_agent():
-    """resolve_agent_factory always returns make_lead_agent regardless of assistant_id."""
+def test_resolve_agent_factory_defaults_to_lead_agent():
+    """``None`` / ``lead_agent`` / custom-agent names all fall through to make_lead_agent."""
     from app.gateway.services import resolve_agent_factory
     from deerflow.agents.lead_agent.agent import make_lead_agent
 
@@ -169,6 +169,14 @@ def test_resolve_agent_factory_returns_make_lead_agent():
     assert resolve_agent_factory("lead_agent") is make_lead_agent
     assert resolve_agent_factory("finalis") is make_lead_agent
     assert resolve_agent_factory("custom-agent-123") is make_lead_agent
+
+
+def test_resolve_agent_factory_routes_chat_agent():
+    """``"chat_agent"`` must dispatch to make_chat_agent for vanilla chat mode."""
+    from app.gateway.services import resolve_agent_factory
+    from deerflow.agents.chat_agent.agent import make_chat_agent
+
+    assert resolve_agent_factory("chat_agent") is make_chat_agent
 
 
 # ---------------------------------------------------------------------------
