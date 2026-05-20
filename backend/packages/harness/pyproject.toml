@@ -36,6 +36,8 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0,<3.0",
     "aiosqlite>=0.19",
     "alembic>=1.13",
+    "langchain-google-vertexai>=3.2.3",
+    "anthropic[vertex]>=0.97.0",
 ]
 
 [project.optional-dependencies]
