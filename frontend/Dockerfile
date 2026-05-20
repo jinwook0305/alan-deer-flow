@@ -25,12 +25,20 @@ COPY frontend ./frontend
 
 # ── Dev: install only, CMD is overridden by docker-compose ───────────────────
 FROM base AS dev
-RUN cd /app/frontend && pnpm install --frozen-lockfile
+ENV npm_config_fetch_timeout=600000
+ENV npm_config_network_timeout=600000
+RUN cd /app/frontend \
+    && pnpm config set registry https://registry.yarnpkg.com \
+    && pnpm install --frozen-lockfile
 EXPOSE 3000
 
 # ── Builder: install + compile Next.js ───────────────────────────────────────
 FROM base AS builder
-RUN cd /app/frontend && pnpm install --frozen-lockfile
+ENV npm_config_fetch_timeout=600000
+ENV npm_config_network_timeout=600000
+RUN cd /app/frontend \
+    && pnpm config set registry https://registry.yarnpkg.com \
+    && pnpm install --frozen-lockfile
 # Skip env validation — runtime vars are injected by nginx/container
 RUN cd /app/frontend && SKIP_ENV_VALIDATION=1 pnpm build
 
