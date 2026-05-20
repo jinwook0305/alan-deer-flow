@@ -221,7 +221,7 @@ export function useThreadStream({
 
   const thread = useStream<AgentThreadState>({
     client: getAPIClient(isMock),
-    assistantId: "lead_agent",
+    assistantId: context.mode === "chat" ? "chat_agent" : "lead_agent",
     threadId: onStreamThreadId,
     reconnectOnMount: true,
     fetchStateHistory: { limit: 1 },
@@ -593,18 +593,25 @@ export function useThreadStream({
             context: {
               ...extraContext,
               ...context,
-              thinking_enabled: context.mode !== "flash",
+              thinking_enabled:
+                context.mode !== "flash" && context.mode !== "chat",
               is_plan_mode: context.mode === "pro" || context.mode === "ultra",
               subagent_enabled: context.mode === "ultra",
               reasoning_effort:
-                context.reasoning_effort ??
-                (context.mode === "ultra"
-                  ? "high"
-                  : context.mode === "pro"
-                    ? "medium"
-                    : context.mode === "thinking"
-                      ? "low"
-                      : undefined),
+                context.mode === "chat"
+                  ? undefined
+                  : (context.reasoning_effort ??
+                    (context.mode === "ultra"
+                      ? "high"
+                      : context.mode === "pro"
+                        ? "medium"
+                        : context.mode === "thinking"
+                          ? "low"
+                          : undefined)),
+              memory_enabled:
+                context.mode === "chat"
+                  ? Boolean(context.memory_enabled)
+                  : undefined,
               thread_id: threadId,
             },
           },

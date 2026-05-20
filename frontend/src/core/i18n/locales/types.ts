@@ -68,6 +68,8 @@ export interface Translations {
     createSkillPrompt: string;
     addAttachments: string;
     mode: string;
+    chatMode: string;
+    chatModeDescription: string;
     flashMode: string;
     flashModeDescription: string;
     reasoningMode: string;
@@ -76,6 +78,9 @@ export interface Translations {
     proModeDescription: string;
     ultraMode: string;
     ultraModeDescription: string;
+    chatMemory: string;
+    chatMemoryOn: string;
+    chatMemoryOff: string;
     reasoningEffort: string;
     reasoningEffortMinimal: string;
     reasoningEffortMinimalDescription: string;

@@ -5,15 +5,17 @@ import type { Translations } from "@/core/i18n/locales/types";
 
 import { Tooltip } from "./tooltip";
 
-export type AgentMode = "flash" | "thinking" | "pro" | "ultra";
+export type AgentMode = "chat" | "flash" | "thinking" | "pro" | "ultra";
 
 function getModeLabelKey(
   mode: AgentMode,
 ): keyof Pick<
   Translations["inputBox"],
-  "flashMode" | "reasoningMode" | "proMode" | "ultraMode"
+  "chatMode" | "flashMode" | "reasoningMode" | "proMode" | "ultraMode"
 > {
   switch (mode) {
+    case "chat":
+      return "chatMode";
     case "flash":
       return "flashMode";
     case "thinking":
@@ -29,12 +31,15 @@ function getModeDescriptionKey(
   mode: AgentMode,
 ): keyof Pick<
   Translations["inputBox"],
+  | "chatModeDescription"
   | "flashModeDescription"
   | "reasoningModeDescription"
   | "proModeDescription"
   | "ultraModeDescription"
 > {
   switch (mode) {
+    case "chat":
+      return "chatModeDescription";
     case "flash":
       return "flashModeDescription";
     case "thinking":
