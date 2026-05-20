@@ -29,12 +29,14 @@ E2E tests live under `tests/e2e/` and use Playwright with Chromium. They mock al
 ## Architecture
 
 ```
-Frontend (Next.js) ──▶ LangGraph SDK ──▶ LangGraph Backend (lead_agent)
-                                              ├── Sub-Agents
-                                              └── Tools & Skills
+Frontend (Next.js) ──▶ LangGraph SDK ──▶ LangGraph Backend
+                                              ├── lead_agent (default — sub-agents, tools, skills)
+                                              └── chat_agent (vanilla LLM chat — no tools)
 ```
 
 The frontend is a stateful chat application. Users create **threads** (conversations), send messages, and receive streamed AI responses. The backend orchestrates agents that can produce **artifacts** (files/code) and **todos**.
+
+**Agent selection**: `useThreadStream` in `core/threads/hooks.ts` derives `assistantId` from `context.mode` — `"chat"` routes to `chat_agent`, everything else (`flash`/`thinking`/`pro`/`ultra`) routes to `lead_agent`. Chat mode also exposes a `memory_enabled` toggle in the input box and forces `thinking_enabled`/`is_plan_mode`/`subagent_enabled`/`reasoning_effort` off in the run context.
 
 ### Source Layout (`src/`)
 

@@ -71,6 +71,7 @@ DeerFlow has newly integrated the intelligent search and crawling toolset indepe
     - [Sandbox \& File System](#sandbox--file-system)
     - [Context Engineering](#context-engineering)
     - [Long-Term Memory](#long-term-memory)
+    - [Chat Mode](#chat-mode)
   - [Recommended Models](#recommended-models)
   - [Embedded Python Client](#embedded-python-client)
   - [Documentation](#documentation)
@@ -665,6 +666,14 @@ Most agents forget everything the moment a conversation ends. DeerFlow remembers
 Across sessions, DeerFlow builds a persistent memory of your profile, preferences, and accumulated knowledge. The more you use it, the better it knows you — your writing style, your technical stack, your recurring workflows. Memory is stored locally and stays under your control.
 
 Memory updates now skip duplicate fact entries at apply time, so repeated preferences and context do not accumulate endlessly across sessions.
+
+### Chat Mode
+
+Sometimes you just want to talk to a model. **Chat mode** is a stripped-down agent — no tools, no skills, no system prompt, no sandbox — that proxies multi-turn conversation straight to the selected LLM. Useful for quick questions, brainstorming, or when the full agent harness would be overkill.
+
+Pick **Chat** from the mode menu in the input box. You can still switch models, and an optional **Memory** toggle lets you opt in to long-term memory updates for that conversation. All other agent capabilities (extended thinking, plan mode, sub-agents) are turned off in chat mode.
+
+Under the hood this is a separate LangGraph (`chat_agent` in `backend/langgraph.json`) that reuses the existing thread / streaming / UI infrastructure but skips the lead-agent middleware chain.
 
 ## Recommended Models
 
