@@ -156,14 +156,23 @@ def inject_authenticated_user_context(config: dict[str, Any], request: Request) 
 
 
 def resolve_agent_factory(assistant_id: str | None):
-    """Resolve the agent factory callable from config.
+    """Resolve the agent factory callable from ``assistant_id``.
 
-    Custom agents are implemented as ``lead_agent`` + an ``agent_name``
-    injected into ``configurable`` or ``context`` — see
-    :func:`build_run_config`.  All ``assistant_id`` values therefore map to the
-    same factory; the routing happens inside ``make_lead_agent`` when it reads
-    ``cfg["agent_name"]``.
+    Dispatch table:
+      - ``"chat_agent"`` → ``make_chat_agent`` (vanilla LLM chat, no tools/skills/prompt)
+      - everything else (``None``, ``"lead_agent"``, custom agent names) →
+        ``make_lead_agent``
+
+    Custom agents are implemented as ``lead_agent`` + an ``agent_name`` injected
+    into ``configurable`` or ``context`` (see :func:`build_run_config`), so they
+    fall through to the default branch and are resolved inside
+    ``make_lead_agent`` when it reads ``cfg["agent_name"]``.
     """
+    if assistant_id == "chat_agent":
+        from deerflow.agents.chat_agent.agent import make_chat_agent
+
+        return make_chat_agent
+
     from deerflow.agents.lead_agent.agent import make_lead_agent
 
     return make_lead_agent
