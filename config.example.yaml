@@ -146,6 +146,43 @@ models:
   #   max_tokens: 8192
   #   supports_vision: true
 
+  # Example: Gemini via Google Cloud Vertex AI (ADC / service-account auth)
+  # Set $GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON path,
+  # or run `gcloud auth application-default login`. No api_key needed.
+  # - name: gemini-2.5-pro-vertex
+  #   display_name: Gemini 2.5 Pro (Vertex)
+  #   use: langchain_google_genai:ChatGoogleGenerativeAI
+  #   model: gemini-2.5-pro
+  #   vertexai: true
+  #   project: your-gcp-project-id
+  #   location: us-central1
+  #   timeout: 600.0
+  #   max_retries: 2
+  #   max_tokens: 8192
+  #   supports_vision: true
+
+  # Example: Claude via Google Cloud Vertex AI Model Garden (ADC auth)
+  # Same auth as the Gemini Vertex example. SA needs `Vertex AI User` role
+  # and the Claude model must be enabled in Model Garden. Claude on Vertex
+  # is region-restricted (e.g. us-east5, europe-west1); see GCP docs.
+  # Note: ChatAnthropicVertex inherits from _VertexAICommon (not ChatAnthropic),
+  # so thinking uses Vertex-style fields: thinking_budget + include_thoughts.
+  # - name: claude-sonnet-4-5-vertex
+  #   display_name: Claude Sonnet 4.5 (Vertex)
+  #   use: langchain_google_vertexai.model_garden:ChatAnthropicVertex
+  #   model_name: claude-sonnet-4-5@20250929
+  #   project: your-gcp-project-id
+  #   location: us-east5
+  #   max_output_tokens: 8192
+  #   max_retries: 2
+  #   supports_vision: true
+  #   supports_thinking: true
+  #   when_thinking_enabled:
+  #     thinking_budget: 4096
+  #     include_thoughts: true
+  #   when_thinking_disabled:
+  #     thinking_budget: 0
+
   # Example: Gemini model via OpenAI-compatible gateway (with thinking support)
   # Use PatchedChatOpenAI so that tool-call thought_signature values on tool_calls
   # are preserved across multi-turn tool-call conversations — required by the
