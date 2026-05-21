@@ -183,7 +183,7 @@ export const koKR: Translations = {
     chats: "채팅",
     recentChats: "최근 채팅",
     demoChats: "데모 채팅",
-    agents: "에이전트",
+    agents: "에이전트!!",
   },
 
   // Agents

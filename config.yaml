@@ -42,6 +42,17 @@ models:
   when_thinking_disabled:
     thinking_level: "minimal"
 
+- name: gemini-3-flash-preview
+  display_name: Gemini 3 Flash
+  use: langchain_google_genai:ChatGoogleGenerativeAI
+  model: gemini-3-flash-preview
+  vertexai: true
+  supports_thinking: true
+  when_thinking_enabled:
+    thinking_level: "high"
+  when_thinking_disabled:
+    thinking_level: "minimal"
+
 - name: claude-opus-4-7
   display_name: Claude Opus 4.7
   use: langchain_google_vertexai.model_garden:ChatAnthropicVertex

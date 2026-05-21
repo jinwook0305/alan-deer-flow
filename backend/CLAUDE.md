@@ -308,11 +308,26 @@ Proxied through nginx: `/api/langgraph/*` → Gateway LangGraph-compatible runti
 
 ### Skills System (`packages/harness/deerflow/skills/`)
 
-- **Location**: `deer-flow/skills/{public,custom}/`
+- **Location**:
+  - **Public** (admin-managed, always shared): `deer-flow/skills/public/`
+  - **Custom** (per-user when authenticated): `{base_dir}/users/{user_id}/skills/custom/`
+  - **Custom legacy** (single-user / no-auth fallback): `deer-flow/skills/custom/`
 - **Format**: Directory with `SKILL.md` (YAML frontmatter: name, description, license, allowed-tools)
-- **Loading**: `load_skills()` recursively scans `skills/{public,custom}` for `SKILL.md`, parses metadata, and reads enabled state from extensions_config.json
-- **Injection**: Enabled skills listed in agent system prompt with container paths
-- **Installation**: `POST /api/skills/install` extracts .skill ZIP archive to custom/ directory
+- **Loading**: `SkillStorage.load_skills(user_id=...)` walks public from the global root and custom from the per-user (or legacy) location, then merges enable state from `extensions_config.json` (global default) with per-user overrides in `users/{user_id}/skills_enabled.json`
+- **Injection**: Enabled skills listed in agent system prompt with container paths; `apply_prompt_template` resolves `user_id` from `get_current_user()` (the request's auth contextvar)
+- **Installation**: `POST /api/skills/install` extracts .skill ZIP archive to the calling user's custom directory (or legacy global custom dir when unauthenticated)
+
+#### Per-User Isolation
+
+Per-user paths activate when the request has an authenticated user (`get_current_user()` returns non-None). Single-user / no-auth installations continue to use the legacy global `deer-flow/skills/custom/` layout without any migration step, so existing deployments keep working unchanged.
+
+- `SkillStorage.{read,write,delete}_custom_skill(name, *, user_id=...)` and `ainstall_skill_from_archive(*, user_id=...)` route writes to `{base_dir}/users/{user_id}/skills/custom/`. `user_id=None` keeps the legacy global path.
+- `LocalSandboxProvider.acquire(thread_id)` adds a per-thread `/mnt/skills/custom` PathMapping pointing at the user's custom dir; the static `/mnt/skills` mapping continues to serve public skills. `AioSandboxProvider._get_extra_mounts(thread_id)` layers an equivalent Docker bind mount.
+- `deerflow.skills.enabled_state.{read_user_skill_overrides, set_user_skill_override, clear_user_skill_override}` manages the per-user `skills_enabled.json` (versioned schema, atomic writes, presence-of-key semantics).  `extensions_config.json` `skills.<name>.enabled` remains the global *default*; the user file is layered on top only when the user explicitly toggles a skill.
+- The lead-agent prompt builder skips its in-process cache when `user_id` is set, since the cache is keyed by the shared `app_config` identity and would otherwise mix users' visible-skill sets.
+- `skill_manage` tool locks are scoped to `(user_id, skill_name)` so two users can independently manage skills sharing the same name without serialising against each other.
+
+**Migration**: Run `PYTHONPATH=. python scripts/migrate_skills_user_isolation.py [--dry-run] [--user-id USER_ID]` to move legacy `<skills_root>/custom/*` (and its `.history/`) into `{base_dir}/users/{user_id}/skills/custom/`. The script is idempotent and leaves public skills untouched. Conflicts are sidelined to `{base_dir}/migration-conflicts/skills/`.
 
 ### Model Factory (`packages/harness/deerflow/models/factory.py`)
 

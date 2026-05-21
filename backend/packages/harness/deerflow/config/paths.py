@@ -189,6 +189,15 @@ class Paths:
         """
         return self.user_dir(user_id) / "skills_enabled.json"
 
+    def host_user_custom_skills_dir(self, user_id: str) -> str:
+        """Host-side path for a user's custom skills directory.
+
+        Mirrors :meth:`host_thread_dir` so AIO / DooD-style sandboxes can mount
+        the per-user custom skills directory using a path the *host* Docker
+        daemon can resolve when the gateway runs inside a container.
+        """
+        return _join_host_path(self._host_base_dir_str(), "users", _validate_user_id(user_id), "skills", "custom")
+
     def thread_dir(self, thread_id: str, *, user_id: str | None = None) -> Path:
         """
         Host path for a thread's data.

@@ -260,6 +260,14 @@ class AioSandboxProvider(SandboxProvider):
             mounts.append(skills_mount)
             logger.info(f"Adding skills mount: {skills_mount}")
 
+        user_custom_mount = self._get_user_custom_skills_mount()
+        if user_custom_mount:
+            # Layered on top of the global skills mount: Docker resolves
+            # ``/mnt/skills/custom`` to the per-user dir while ``/mnt/skills/public``
+            # continues to come from the shared read-only mount above.
+            mounts.append(user_custom_mount)
+            logger.info(f"Adding per-user custom skills mount: {user_custom_mount}")
+
         return mounts
 
     @staticmethod
@@ -302,6 +310,34 @@ class AioSandboxProvider(SandboxProvider):
         except Exception as e:
             logger.warning(f"Could not setup skills mount: {e}")
         return None
+
+    @staticmethod
+    def _get_user_custom_skills_mount() -> tuple[str, str, bool] | None:
+        """Per-user custom skills mount layered over the global skills mount.
+
+        Only returned when the current request is authenticated; single-user /
+        no-auth installs keep using the legacy ``<skills_root>/custom/`` view
+        served by :meth:`_get_skills_mount`.  Layout mirrors the LocalSandbox
+        per-user PathMapping so prompt, tool, and sandbox views agree.
+        """
+        try:
+            from deerflow.runtime.user_context import get_current_user
+
+            user = get_current_user()
+            if user is None:
+                return None
+
+            config = get_app_config()
+            container_path = config.skills.container_path
+            paths = get_paths()
+            user_id = str(user.id)
+            # ensure the host dir exists so Docker has something to bind-mount.
+            paths.user_custom_skills_dir(user_id).mkdir(parents=True, exist_ok=True)
+            host_custom = paths.host_user_custom_skills_dir(user_id)
+            return (host_custom, f"{container_path}/custom", True)  # Read-only inside the sandbox
+        except Exception as e:
+            logger.warning(f"Could not setup per-user custom skills mount: {e}")
+            return None
 
     # ── Idle timeout management ──────────────────────────────────────────
 
