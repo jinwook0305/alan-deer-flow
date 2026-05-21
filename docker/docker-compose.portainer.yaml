@@ -1,0 +1,145 @@
+# DeerFlow — Portainer dev VM stack
+#
+# Image-only compose used by Portainer to deploy pre-built images from ACR.
+# Watchtower (running separately on the same host) picks up new ``dev-latest``
+# digests pushed by ``.github/workflows/deploy-dev-vm.yml`` and recreates the
+# gateway / frontend containers without manual intervention.
+#
+# ── Assumptions ───────────────────────────────────────────────────────────────
+# • Sandbox mode: LocalSandboxProvider (no /var/run/docker.sock mount, no
+#   provisioner service). Switch to AioSandboxProvider only if you need
+#   per-thread container isolation; see backend/CLAUDE.md "Sandbox System".
+# • Vertex AI service account JSON is staged on the host at
+#   ${GOOGLE_APPLICATION_CREDENTIALS_HOST} (read-only). Use a prod-only SA
+#   with the ``roles/aiplatform.user`` scope.
+# • Watchtower already runs on this host with ACR credentials loaded; gateway
+#   and frontend opt in via ``com.centurylinklabs.watchtower.enable=true``.
+#
+# ── Required Portainer stack environment variables ────────────────────────────
+#   ACR_LOGIN_SERVER                       e.g. deerflowacr.azurecr.io
+#   TAG                                    e.g. dev-latest
+#   PORT                                   external nginx port (e.g. 9111)
+#   DEER_FLOW_HOME                         host path for persistent user data
+#                                          (e.g. /srv/deer-flow/data)
+#   DEER_FLOW_CONFIG_PATH                  host path to config.yaml
+#                                          (e.g. /srv/deer-flow/config.yaml)
+#   DEER_FLOW_EXTENSIONS_CONFIG_PATH       host path to extensions_config.json
+#   DEER_FLOW_SKILLS_PATH                  host path to skills/ (public skills)
+#   DEER_FLOW_NGINX_CONF                   host path to nginx.conf
+#   GOOGLE_APPLICATION_CREDENTIALS_HOST    host path to vertex SA JSON
+#                                          (chmod 600, owned by root)
+#   BETTER_AUTH_SECRET                     persistent random 64-hex
+#   AUTH_JWT_SECRET                        persistent random 32+ chars
+#   GATEWAY_WORKERS                        uvicorn workers (default 4)
+#
+# ── Optional model / integration env vars ─────────────────────────────────────
+#   OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, TAVILY_API_KEY, ...
+#   FEISHU_APP_ID / SLACK_BOT_TOKEN / ...  (only if IM channels are enabled)
+
+services:
+  # ── Reverse Proxy ──────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: deer-flow-nginx
+    ports:
+      - "${PORT:-9111}:2026"
+    volumes:
+      - ${DEER_FLOW_NGINX_CONF}:/etc/nginx/nginx.conf.template:ro
+    command: >
+      sh -c "cp /etc/nginx/nginx.conf.template /etc/nginx/nginx.conf
+      && nginx -g 'daemon off;'"
+    depends_on:
+      - frontend
+      - gateway
+    networks:
+      - deer-flow
+    restart: unless-stopped
+
+  # ── Frontend: Next.js production build (image pulled from ACR) ─────────────
+  frontend:
+    image: ${ACR_LOGIN_SERVER}/alan-deerflow-frontend:${TAG:-dev-latest}
+    container_name: deer-flow-frontend
+    environment:
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - DEER_FLOW_INTERNAL_GATEWAY_BASE_URL=http://gateway:8001
+    networks:
+      - deer-flow
+    restart: unless-stopped
+    labels:
+      # Watchtower picks up new dev-latest digests pushed by GHA.
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # ── Gateway API + LangGraph runtime (image pulled from ACR) ────────────────
+  gateway:
+    image: ${ACR_LOGIN_SERVER}/alan-deerflow-gateway:${TAG:-dev-latest}
+    container_name: deer-flow-gateway
+    command: sh -c "cd backend && PYTHONPATH=. uv run uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 --workers ${GATEWAY_WORKERS:-4}"
+    working_dir: /app
+    volumes:
+      # Configs are read-only — Portainer host owns them.
+      - ${DEER_FLOW_CONFIG_PATH}:/app/backend/config.yaml:ro
+      - ${DEER_FLOW_EXTENSIONS_CONFIG_PATH}:/app/backend/extensions_config.json:ro
+      # Public skills (admin-managed, shared across users).
+      - ${DEER_FLOW_SKILLS_PATH}:/app/skills:ro
+      # Persistent per-user data: skills/custom, skills_enabled.json, memory,
+      # threads, agents, .jwt_secret, ...
+      - ${DEER_FLOW_HOME}:/app/backend/.deer-flow
+      # Vertex AI service account (chmod 600 on host).
+      - ${GOOGLE_APPLICATION_CREDENTIALS_HOST}:/run/secrets/vertex-sa.json:ro
+      # AIO sandbox mode only — keep commented out for LocalSandboxProvider.
+      # - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # Path resolution
+      - DEER_FLOW_PROJECT_ROOT=/app
+      - DEER_FLOW_HOME=/app/backend/.deer-flow
+      - DEER_FLOW_CONFIG_PATH=/app/backend/config.yaml
+      - DEER_FLOW_EXTENSIONS_CONFIG_PATH=/app/backend/extensions_config.json
+      # DooD path translation (only meaningful for AIO sandbox; harmless when
+      # LocalSandbox is active).
+      - DEER_FLOW_HOST_BASE_DIR=${DEER_FLOW_HOME}
+      - DEER_FLOW_HOST_SKILLS_PATH=${DEER_FLOW_SKILLS_PATH}
+      - DEER_FLOW_SANDBOX_HOST=host.docker.internal
+      # Auth
+      - AUTH_JWT_SECRET=${AUTH_JWT_SECRET}
+      # Vertex AI
+      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/vertex-sa.json
+      # Optional model API keys — declare here so they survive restarts.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - VLLM_API_KEY=${VLLM_API_KEY:-}
+      # Optional search APIs.
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+      - JINA_API_KEY=${JINA_API_KEY:-}
+      - SERPER_API_KEY=${SERPER_API_KEY:-}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
+      # IM channel integrations (gateway URL points back at this container).
+      - DEER_FLOW_CHANNELS_LANGGRAPH_URL=${DEER_FLOW_CHANNELS_LANGGRAPH_URL:-http://gateway:8001/api}
+      - DEER_FLOW_CHANNELS_GATEWAY_URL=${DEER_FLOW_CHANNELS_GATEWAY_URL:-http://gateway:8001}
+      - FEISHU_APP_ID=${FEISHU_APP_ID:-}
+      - FEISHU_APP_SECRET=${FEISHU_APP_SECRET:-}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - SLACK_APP_TOKEN=${SLACK_APP_TOKEN:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      # LangSmith tracing is opt-in.
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-deer-flow-dev}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - deer-flow
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:8001/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  deer-flow:
+    driver: bridge
