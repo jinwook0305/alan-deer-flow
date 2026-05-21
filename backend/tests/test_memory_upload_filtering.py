@@ -150,12 +150,12 @@ class TestDetectCorrection:
 
         assert detect_correction(msgs) is True
 
-    def test_detects_chinese_correction_signal(self):
+    def test_detects_korean_correction_signal(self):
         msgs = [
-            _human("帮我启动项目"),
-            _ai("用 npm start"),
-            _human("不对，改用 make dev"),
-            _ai("明白了"),
+            _human("프로젝트 실행 좀 도와줘"),
+            _ai("npm start 쓰세요"),
+            _human("아니, make dev로 바꿔서 다시 해줘"),
+            _ai("알겠습니다"),
         ]
 
         assert detect_correction(msgs) is True
@@ -298,12 +298,12 @@ class TestDetectReinforcement:
 
         assert detect_reinforcement(msgs) is True
 
-    def test_detects_chinese_reinforcement_signal(self):
+    def test_detects_korean_reinforcement_signal(self):
         msgs = [
-            _human("帮我用要点来总结"),
-            _ai("好的，要点如下：..."),
-            _human("完全正确，就是这个意思"),
-            _ai("很高兴能帮到你"),
+            _human("요점으로 정리해줘"),
+            _ai("네, 요점은 다음과 같습니다: ..."),
+            _human("정확해. 바로 그거야."),
+            _ai("도움이 되어 다행입니다"),
         ]
 
         assert detect_reinforcement(msgs) is True
