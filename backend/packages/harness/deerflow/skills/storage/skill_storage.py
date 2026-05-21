@@ -229,6 +229,12 @@ class SkillStorage(ABC):
     def load_skills(self, *, enabled_only: bool = False, user_id: str | None = None) -> list[Skill]:
         """Discover all skills, merge enabled state, sort and optionally filter.
 
+        The effective ``enabled`` flag for each skill is computed as:
+
+        * the user's explicit override in ``users/{user_id}/skills_enabled.json``
+          when *user_id* is given and the user has set that skill, otherwise
+        * the global default from ``extensions_config.json``.
+
         Origin: ``deerflow.skills.loader.load_skills``.
         """
         from deerflow.skills.parser import parse_skill_file
@@ -245,14 +251,27 @@ class SkillStorage(ABC):
 
         skills = list(skills_by_name.values())
 
-        # Merge enabled state from extensions config (re-read every call so
-        # changes made by another process are picked up immediately).
+        # Merge enabled state. Always re-read both files so changes made by
+        # another process are picked up immediately (no in-process caching).
+        user_overrides: dict[str, bool] = {}
+        if user_id is not None:
+            try:
+                from deerflow.skills.enabled_state import read_user_skill_overrides
+
+                user_overrides = read_user_skill_overrides(user_id)
+            except Exception as e:  # pragma: no cover - defensive
+                logger.warning("Failed to read user skill overrides for %r: %s", user_id, e)
+
         try:
             from deerflow.config.extensions_config import ExtensionsConfig
 
             extensions_config = ExtensionsConfig.from_file()
             for skill in skills:
-                skill.enabled = extensions_config.is_skill_enabled(skill.name, skill.category)
+                override = user_overrides.get(skill.name)
+                if override is not None:
+                    skill.enabled = override
+                else:
+                    skill.enabled = extensions_config.is_skill_enabled(skill.name, skill.category)
         except Exception as e:
             logger.warning("Failed to load extensions config: %s", e)
 

@@ -19,14 +19,18 @@ from deerflow.tools.types import Runtime
 
 logger = logging.getLogger(__name__)
 
-_skill_locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
+# Locks are scoped to ``(user_id, skill_name)`` so two users can independently
+# manage skills sharing the same name without serialising against each other.
+# ``user_id`` is ``None`` for legacy / no-auth installations.
+_skill_locks: WeakValueDictionary[tuple[str | None, str], asyncio.Lock] = WeakValueDictionary()
 
 
-def _get_lock(name: str) -> asyncio.Lock:
-    lock = _skill_locks.get(name)
+def _get_lock(user_id: str | None, name: str) -> asyncio.Lock:
+    key = (user_id, name)
+    lock = _skill_locks.get(key)
     if lock is None:
         lock = asyncio.Lock()
-        _skill_locks[name] = lock
+        _skill_locks[key] = lock
     return lock
 
 
@@ -36,6 +40,36 @@ def _get_thread_id(runtime: Runtime | None) -> str | None:
     if runtime.context and runtime.context.get("thread_id"):
         return runtime.context.get("thread_id")
     return runtime.config.get("configurable", {}).get("thread_id")
+
+
+def _resolve_skill_user_id(runtime: Runtime | None) -> str | None:
+    """Return the effective user_id for skill storage scoping, or ``None`` for legacy.
+
+    Resolution order:
+
+    1. ``runtime.context["user_id"]`` — set explicitly by the gateway when an
+       authenticated request enters tool execution. Survives task / thread-pool
+       boundaries that may drop the auth ContextVar.
+    2. The ``_current_user`` ContextVar via :func:`get_current_user` — set by
+       the auth middleware at request entry.
+    3. ``None`` — no auth context detected, so the storage layer should fall
+       back to the legacy global ``<skills_root>/custom/`` location.
+
+    Mirrors the semantics used in :func:`deerflow.agents.lead_agent.agent._make_lead_agent`
+    so the system prompt and the ``skill_manage`` tool agree on which custom
+    skill directory is being read/written.
+    """
+    if runtime is not None:
+        context = getattr(runtime, "context", None)
+        if isinstance(context, dict):
+            ctx_user_id = context.get("user_id")
+            if ctx_user_id:
+                return str(ctx_user_id)
+
+    from deerflow.runtime.user_context import get_current_user
+
+    user = get_current_user()
+    return str(user.id) if user is not None else None
 
 
 def _history_record(*, action: str, file_path: str, prev_content: str | None, new_content: str | None, thread_id: str | None, scanner: dict[str, Any]) -> dict[str, Any]:
@@ -85,49 +119,52 @@ async def _skill_manage_impl(
         expected_count: Optional expected number of replacements for patch.
     """
     name = SkillStorage.validate_skill_name(name)
-    lock = _get_lock(name)
+    user_id = _resolve_skill_user_id(runtime)
+    lock = _get_lock(user_id, name)
     thread_id = _get_thread_id(runtime)
     skill_storage = get_or_new_skill_storage()
 
     async with lock:
         if action == "create":
-            if await _to_thread(skill_storage.custom_skill_exists, name):
+            if await _to_thread(skill_storage.custom_skill_exists, name, user_id=user_id):
                 raise ValueError(f"Custom skill '{name}' already exists.")
             if content is None:
                 raise ValueError("content is required for create.")
             await _to_thread(skill_storage.validate_skill_markdown_content, name, content)
             scan = await _scan_or_raise(content, executable=False, location=f"{name}/{SKILL_MD_FILE}")
-            await _to_thread(skill_storage.write_custom_skill, name, SKILL_MD_FILE, content)
+            await _to_thread(skill_storage.write_custom_skill, name, SKILL_MD_FILE, content, user_id=user_id)
             await _to_thread(
                 skill_storage.append_history,
                 name,
                 _history_record(action="create", file_path=SKILL_MD_FILE, prev_content=None, new_content=content, thread_id=thread_id, scanner=scan),
+                user_id=user_id,
             )
             await refresh_skills_system_prompt_cache_async()
             return f"Created custom skill '{name}'."
 
         if action == "edit":
-            await _to_thread(skill_storage.ensure_custom_skill_is_editable, name)
+            await _to_thread(skill_storage.ensure_custom_skill_is_editable, name, user_id=user_id)
             if content is None:
                 raise ValueError("content is required for edit.")
             await _to_thread(skill_storage.validate_skill_markdown_content, name, content)
             scan = await _scan_or_raise(content, executable=False, location=f"{name}/{SKILL_MD_FILE}")
-            skill_file = skill_storage.get_custom_skill_file(name)
+            skill_file = skill_storage.get_custom_skill_file(name, user_id=user_id)
             prev_content = await _to_thread(skill_file.read_text, encoding="utf-8")
-            await _to_thread(skill_storage.write_custom_skill, name, SKILL_MD_FILE, content)
+            await _to_thread(skill_storage.write_custom_skill, name, SKILL_MD_FILE, content, user_id=user_id)
             await _to_thread(
                 skill_storage.append_history,
                 name,
                 _history_record(action="edit", file_path=SKILL_MD_FILE, prev_content=prev_content, new_content=content, thread_id=thread_id, scanner=scan),
+                user_id=user_id,
             )
             await refresh_skills_system_prompt_cache_async()
             return f"Updated custom skill '{name}'."
 
         if action == "patch":
-            await _to_thread(skill_storage.ensure_custom_skill_is_editable, name)
+            await _to_thread(skill_storage.ensure_custom_skill_is_editable, name, user_id=user_id)
             if find is None or replace is None:
                 raise ValueError("find and replace are required for patch.")
-            skill_file = skill_storage.get_custom_skill_file(name)
+            skill_file = skill_storage.get_custom_skill_file(name, user_id=user_id)
             prev_content = await _to_thread(skill_file.read_text, encoding="utf-8")
             occurrences = prev_content.count(find)
             if occurrences == 0:
@@ -138,11 +175,12 @@ async def _skill_manage_impl(
             new_content = prev_content.replace(find, replace, replacement_count)
             await _to_thread(skill_storage.validate_skill_markdown_content, name, new_content)
             scan = await _scan_or_raise(new_content, executable=False, location=f"{name}/{SKILL_MD_FILE}")
-            await _to_thread(skill_storage.write_custom_skill, name, SKILL_MD_FILE, new_content)
+            await _to_thread(skill_storage.write_custom_skill, name, SKILL_MD_FILE, new_content, user_id=user_id)
             await _to_thread(
                 skill_storage.append_history,
                 name,
                 _history_record(action="patch", file_path=SKILL_MD_FILE, prev_content=prev_content, new_content=new_content, thread_id=thread_id, scanner=scan),
+                user_id=user_id,
             )
             await refresh_skills_system_prompt_cache_async()
             return f"Patched custom skill '{name}' ({replacement_count} replacement(s) applied, {occurrences} match(es) found)."
@@ -159,32 +197,34 @@ async def _skill_manage_impl(
                     thread_id=thread_id,
                     scanner={"decision": "allow", "reason": "Deletion requested."},
                 ),
+                user_id=user_id,
             )
             await refresh_skills_system_prompt_cache_async()
             return f"Deleted custom skill '{name}'."
 
         if action == "write_file":
-            await _to_thread(skill_storage.ensure_custom_skill_is_editable, name)
+            await _to_thread(skill_storage.ensure_custom_skill_is_editable, name, user_id=user_id)
             if path is None or content is None:
                 raise ValueError("path and content are required for write_file.")
-            target = await _to_thread(skill_storage.ensure_safe_support_path, name, path)
+            target = await _to_thread(skill_storage.ensure_safe_support_path, name, path, user_id=user_id)
             exists = await _to_thread(target.exists)
             prev_content = await _to_thread(target.read_text, encoding="utf-8") if exists else None
             executable = "scripts/" in path or path.startswith("scripts/")
             scan = await _scan_or_raise(content, executable=executable, location=f"{name}/{path}")
-            await _to_thread(skill_storage.write_custom_skill, name, path, content)
+            await _to_thread(skill_storage.write_custom_skill, name, path, content, user_id=user_id)
             await _to_thread(
                 skill_storage.append_history,
                 name,
                 _history_record(action="write_file", file_path=path, prev_content=prev_content, new_content=content, thread_id=thread_id, scanner=scan),
+                user_id=user_id,
             )
             return f"Wrote '{path}' for custom skill '{name}'."
 
         if action == "remove_file":
-            await _to_thread(skill_storage.ensure_custom_skill_is_editable, name)
+            await _to_thread(skill_storage.ensure_custom_skill_is_editable, name, user_id=user_id)
             if path is None:
                 raise ValueError("path is required for remove_file.")
-            target = await _to_thread(skill_storage.ensure_safe_support_path, name, path)
+            target = await _to_thread(skill_storage.ensure_safe_support_path, name, path, user_id=user_id)
             if not await _to_thread(target.exists):
                 raise FileNotFoundError(f"Supporting file '{path}' not found for skill '{name}'.")
             prev_content = await _to_thread(target.read_text, encoding="utf-8")
@@ -193,6 +233,7 @@ async def _skill_manage_impl(
                 skill_storage.append_history,
                 name,
                 _history_record(action="remove_file", file_path=path, prev_content=prev_content, new_content=None, thread_id=thread_id, scanner={"decision": "allow", "reason": "Deletion requested."}),
+                user_id=user_id,
             )
             return f"Removed '{path}' from custom skill '{name}'."
 

@@ -17,6 +17,7 @@ async def _async_result(decision: str, reason: str):
     return ScanResult(decision=decision, reason=reason)
 
 
+@pytest.mark.no_auto_user
 def test_skill_manage_create_and_patch(monkeypatch, tmp_path):
     skills_root = tmp_path / "skills"
     config = SimpleNamespace(
@@ -60,6 +61,7 @@ def test_skill_manage_create_and_patch(monkeypatch, tmp_path):
     assert refresh_calls == ["refresh", "refresh"]
 
 
+@pytest.mark.no_auto_user
 def test_skill_manage_patch_replaces_single_occurrence_by_default(monkeypatch, tmp_path):
     skills_root = tmp_path / "skills"
     config = SimpleNamespace(
@@ -96,6 +98,7 @@ def test_skill_manage_patch_replaces_single_occurrence_by_default(monkeypatch, t
     assert skill_text.count("Demo skill") == 1
 
 
+@pytest.mark.no_auto_user
 def test_skill_manage_rejects_public_skill_patch(monkeypatch, tmp_path):
     skills_root = tmp_path / "skills"
     public_dir = skills_root / "public" / "deep-research"
@@ -122,6 +125,7 @@ def test_skill_manage_rejects_public_skill_patch(monkeypatch, tmp_path):
         )
 
 
+@pytest.mark.no_auto_user
 def test_skill_manage_sync_wrapper_supported(monkeypatch, tmp_path):
     skills_root = tmp_path / "skills"
     config = SimpleNamespace(
@@ -149,6 +153,7 @@ def test_skill_manage_sync_wrapper_supported(monkeypatch, tmp_path):
     assert refresh_calls == ["refresh"]
 
 
+@pytest.mark.no_auto_user
 def test_skill_manage_rejects_support_path_traversal(monkeypatch, tmp_path):
     skills_root = tmp_path / "skills"
     config = SimpleNamespace(

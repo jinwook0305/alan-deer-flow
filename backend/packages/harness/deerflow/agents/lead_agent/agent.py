@@ -425,6 +425,17 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
 
     skills_for_tool_policy = _load_enabled_skills_for_tool_policy(available_skills, app_config=resolved_app_config)
 
+    # Capture user_id from the request context so per-user custom skills and
+    # enable overrides are scoped to the calling user.  When no auth context is
+    # active (single-user / dev mode), pass ``None`` so the storage falls back
+    # to the legacy global ``<skills_root>/custom/`` location and existing
+    # installations keep working without a migration step.  Auth-active
+    # multi-user deployments rely on the per-user paths introduced in PR 1.
+    from deerflow.runtime.user_context import get_current_user
+
+    _current_user = get_current_user()
+    prompt_user_id: str | None = str(_current_user.id) if _current_user is not None else None
+
     if is_bootstrap:
         # Special bootstrap agent with minimal prompt for initial custom agent creation flow
         tools = get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled, app_config=resolved_app_config) + [setup_agent]
@@ -437,6 +448,7 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
                 max_concurrent_subagents=max_concurrent_subagents,
                 available_skills=set(["bootstrap"]),
                 app_config=resolved_app_config,
+                user_id=prompt_user_id,
             ),
             state_schema=ThreadState,
         )
@@ -456,6 +468,7 @@ def _make_lead_agent(config: RunnableConfig, *, app_config: AppConfig):
             agent_name=agent_name,
             available_skills=set(agent_config.skills) if agent_config and agent_config.skills is not None else None,
             app_config=resolved_app_config,
+            user_id=prompt_user_id,
         ),
         state_schema=ThreadState,
     )

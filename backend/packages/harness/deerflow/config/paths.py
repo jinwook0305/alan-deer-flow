@@ -180,6 +180,15 @@ class Paths:
         """
         return self.user_skills_dir(user_id) / "custom"
 
+    def user_skills_enabled_file(self, user_id: str) -> Path:
+        """Per-user skill enable overrides: `{base_dir}/users/{user_id}/skills_enabled.json`.
+
+        Stores explicit ``enabled``/``disabled`` decisions for individual skills.
+        Skills not present in this file inherit the global default from
+        ``extensions_config.json``.
+        """
+        return self.user_dir(user_id) / "skills_enabled.json"
+
     def thread_dir(self, thread_id: str, *, user_id: str | None = None) -> Path:
         """
         Host path for a thread's data.

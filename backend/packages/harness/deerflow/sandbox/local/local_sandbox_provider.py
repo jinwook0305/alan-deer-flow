@@ -169,20 +169,26 @@ class LocalSandboxProvider(SandboxProvider):
 
     @staticmethod
     def _build_thread_path_mappings(thread_id: str) -> list[PathMapping]:
-        """Build per-thread path mappings for /mnt/user-data and /mnt/acp-workspace.
+        """Build per-thread path mappings for /mnt/user-data, /mnt/acp-workspace, and /mnt/skills/custom.
 
-        Resolves ``user_id`` via :func:`get_effective_user_id` (the same path
-        :class:`AioSandboxProvider` uses) and ensures the backing host
-        directories exist before they are mapped into the sandbox view.
+        Resolves ``user_id`` via :func:`get_current_user` so authenticated
+        requests get per-user custom skill paths, while single-user / no-auth
+        installs keep the legacy global ``<skills_root>/custom/`` view served
+        by the static ``/mnt/skills`` mapping. Mirrors the semantics used in
+        :func:`deerflow.agents.lead_agent.agent._make_lead_agent` so prompt,
+        tool, and sandbox views agree on which custom skills are visible.
         """
+        from deerflow.config import get_app_config
         from deerflow.config.paths import get_paths
-        from deerflow.runtime.user_context import get_effective_user_id
+        from deerflow.runtime.user_context import get_current_user, get_effective_user_id
 
         paths = get_paths()
-        user_id = get_effective_user_id()
-        paths.ensure_thread_dirs(thread_id, user_id=user_id)
+        # /mnt/user-data and /mnt/acp-workspace stay on the existing semantics
+        # (use the "default" bucket when no auth) to match Memory/Threads.
+        user_data_user_id = get_effective_user_id()
+        paths.ensure_thread_dirs(thread_id, user_id=user_data_user_id)
 
-        return [
+        mappings: list[PathMapping] = [
             # Aggregate parent mapping so ``ls /mnt/user-data`` and other
             # parent-level operations behave the same as inside AIO (where the
             # parent directory is real and contains the three subdirs). Longer
@@ -190,30 +196,52 @@ class LocalSandboxProvider(SandboxProvider):
             # because ``_find_path_mapping`` sorts by container_path length.
             PathMapping(
                 container_path=_USER_DATA_VIRTUAL_PREFIX,
-                local_path=str(paths.sandbox_user_data_dir(thread_id, user_id=user_id)),
+                local_path=str(paths.sandbox_user_data_dir(thread_id, user_id=user_data_user_id)),
                 read_only=False,
             ),
             PathMapping(
                 container_path=f"{_USER_DATA_VIRTUAL_PREFIX}/workspace",
-                local_path=str(paths.sandbox_work_dir(thread_id, user_id=user_id)),
+                local_path=str(paths.sandbox_work_dir(thread_id, user_id=user_data_user_id)),
                 read_only=False,
             ),
             PathMapping(
                 container_path=f"{_USER_DATA_VIRTUAL_PREFIX}/uploads",
-                local_path=str(paths.sandbox_uploads_dir(thread_id, user_id=user_id)),
+                local_path=str(paths.sandbox_uploads_dir(thread_id, user_id=user_data_user_id)),
                 read_only=False,
             ),
             PathMapping(
                 container_path=f"{_USER_DATA_VIRTUAL_PREFIX}/outputs",
-                local_path=str(paths.sandbox_outputs_dir(thread_id, user_id=user_id)),
+                local_path=str(paths.sandbox_outputs_dir(thread_id, user_id=user_data_user_id)),
                 read_only=False,
             ),
             PathMapping(
                 container_path=_ACP_WORKSPACE_VIRTUAL_PREFIX,
-                local_path=str(paths.acp_workspace_dir(thread_id, user_id=user_id)),
+                local_path=str(paths.acp_workspace_dir(thread_id, user_id=user_data_user_id)),
                 read_only=False,
             ),
         ]
+
+        # Per-user custom skills view. Only added when there is an actual
+        # authenticated user — otherwise the static ``/mnt/skills`` mapping
+        # transparently serves the legacy ``<skills_root>/custom/`` location.
+        skill_user = get_current_user()
+        if skill_user is not None:
+            try:
+                config = get_app_config()
+                container_path = config.skills.container_path
+                custom_local = paths.user_custom_skills_dir(str(skill_user.id))
+                custom_local.mkdir(parents=True, exist_ok=True)
+                mappings.append(
+                    PathMapping(
+                        container_path=f"{container_path}/custom",
+                        local_path=str(custom_local),
+                        read_only=True,
+                    )
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Failed to build per-user skills custom mapping: %s", exc, exc_info=True)
+
+        return mappings
 
     def acquire(self, thread_id: str | None = None) -> str:
         """Return a sandbox id scoped to *thread_id* (or the generic singleton).

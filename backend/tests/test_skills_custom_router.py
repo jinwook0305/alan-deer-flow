@@ -4,12 +4,21 @@ import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.gateway.routers import skills as skills_router
 from deerflow.skills.storage import get_or_new_skill_storage
 from deerflow.skills.types import Skill
+
+# These tests were written before per-user skill isolation existed and exercise
+# the legacy ``<skills_root>/custom/`` storage layout.  PR 3 added a per-user
+# branch that activates when the request has an authenticated user, and the
+# global autouse fixture in ``tests/conftest.py`` injects ``test-user-autouse``
+# by default.  Opt every router test in this file out of that fixture so the
+# storage falls back to the legacy path the test setup actually populates.
+pytestmark = pytest.mark.no_auto_user
 
 
 def _skill_content(name: str, description: str = "Demo skill") -> str:
@@ -333,7 +342,7 @@ def test_update_skill_refreshes_prompt_cache_before_return(monkeypatch, tmp_path
     enabled_state = {"value": True}
     refresh_calls = []
 
-    def _load_skills(*, enabled_only: bool):
+    def _load_skills(*, enabled_only: bool, user_id: str | None = None):
         skill = _make_skill("demo-skill", enabled=enabled_state["value"])
         if enabled_only and not skill.enabled:
             return []

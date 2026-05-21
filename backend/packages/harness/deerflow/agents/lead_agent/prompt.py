@@ -127,14 +127,25 @@ def get_cached_enabled_skills() -> list[Skill]:
     return []
 
 
-def get_enabled_skills_for_config(app_config: AppConfig | None = None) -> list[Skill]:
+def get_enabled_skills_for_config(app_config: AppConfig | None = None, *, user_id: str | None = None) -> list[Skill]:
     """Return enabled skills using the caller's config source.
 
     When a concrete ``app_config`` is supplied, cache the loaded skills by that
     config object's identity so request-scoped config injection still resolves
     skill paths from the matching config without rescanning storage on every
     agent factory call.
+
+    Per-user calls (``user_id`` is set) always bypass the in-process cache and
+    perform a fresh load.  Skills are scoped to a single user, so caching by
+    ``app_config`` identity alone would mix users' visible-skill sets.  Per-user
+    caching is a future optimisation; for now the load cost is small (filesystem
+    walk + two JSON reads) compared to a multi-user safety bug.
     """
+    if user_id is not None:
+        if app_config is None:
+            return list(get_or_new_skill_storage().load_skills(enabled_only=True, user_id=user_id))
+        return list(get_or_new_skill_storage(app_config=app_config).load_skills(enabled_only=True, user_id=user_id))
+
     if app_config is None:
         return _get_enabled_skills()
 
@@ -623,9 +634,15 @@ You have access to skills that provide optimized workflows for specific tasks. E
 </skill_system>"""
 
 
-def get_skills_prompt_section(available_skills: set[str] | None = None, *, app_config: AppConfig | None = None) -> str:
-    """Generate the skills prompt section with available skills list."""
-    skills = get_enabled_skills_for_config(app_config)
+def get_skills_prompt_section(available_skills: set[str] | None = None, *, app_config: AppConfig | None = None, user_id: str | None = None) -> str:
+    """Generate the skills prompt section with available skills list.
+
+    When *user_id* is provided, the visible skills are loaded with per-user
+    isolation: public skills always come from the global skills root, custom
+    skills only from ``users/{user_id}/skills/custom/``, and enable state is
+    the user override merged on top of the global default.
+    """
+    skills = get_enabled_skills_for_config(app_config, user_id=user_id)
 
     if app_config is None:
         try:
@@ -772,6 +789,7 @@ def apply_prompt_template(
     agent_name: str | None = None,
     available_skills: set[str] | None = None,
     app_config: AppConfig | None = None,
+    user_id: str | None = None,
 ) -> str:
     # Include subagent section only if enabled (from runtime parameter)
     n = max_concurrent_subagents
@@ -796,7 +814,7 @@ def apply_prompt_template(
     )
 
     # Get skills section
-    skills_section = get_skills_prompt_section(available_skills, app_config=app_config)
+    skills_section = get_skills_prompt_section(available_skills, app_config=app_config, user_id=user_id)
 
     # Get deferred tools section (tool_search)
     deferred_tools_section = get_deferred_tools_prompt_section(app_config=app_config)
