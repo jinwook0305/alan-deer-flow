@@ -53,33 +53,40 @@ class LocalSkillStorage(SkillStorage):
     def get_skills_root_path(self) -> Path:
         return self._host_root
 
-    def custom_skill_exists(self, name: str) -> bool:
-        return self.get_custom_skill_file(name).exists()
+    def custom_skill_exists(self, name: str, *, user_id: str | None = None) -> bool:
+        return self.get_custom_skill_file(name, user_id=user_id).exists()
 
     def public_skill_exists(self, name: str) -> bool:
         normalized_name = self.validate_skill_name(name)
         return (self._host_root / SkillCategory.PUBLIC.value / normalized_name / SKILL_MD_FILE).exists()
 
-    def _iter_skill_files(self) -> Iterable[tuple[SkillCategory, Path, Path]]:
-        if not self._host_root.exists():
-            return
-        for category in SkillCategory:
-            category_path = self._host_root / category.value
-            if not category_path.exists() or not category_path.is_dir():
+    def _iter_skill_files(self, *, user_id: str | None = None) -> Iterable[tuple[SkillCategory, Path, Path]]:
+        # Public skills always come from the globally configured skills root.
+        public_root = self._host_root / SkillCategory.PUBLIC.value
+        if self._host_root.exists() and public_root.exists() and public_root.is_dir():
+            yield from self._walk_category_dir(SkillCategory.PUBLIC, public_root)
+
+        # Custom skills come from the per-user location when user_id is given,
+        # otherwise from the legacy global location.
+        custom_root = self.get_custom_skills_root(user_id=user_id)
+        if custom_root.exists() and custom_root.is_dir():
+            yield from self._walk_category_dir(SkillCategory.CUSTOM, custom_root)
+
+    @staticmethod
+    def _walk_category_dir(category: SkillCategory, category_path: Path) -> Iterable[tuple[SkillCategory, Path, Path]]:
+        for current_root, dir_names, file_names in os.walk(category_path, followlinks=True):
+            dir_names[:] = sorted(name for name in dir_names if not name.startswith("."))
+            if SKILL_MD_FILE not in file_names:
                 continue
-            for current_root, dir_names, file_names in os.walk(category_path, followlinks=True):
-                dir_names[:] = sorted(name for name in dir_names if not name.startswith("."))
-                if SKILL_MD_FILE not in file_names:
-                    continue
-                yield category, category_path, Path(current_root) / SKILL_MD_FILE
+            yield category, category_path, Path(current_root) / SKILL_MD_FILE
 
-    def read_custom_skill(self, name: str) -> str:
-        if not self.custom_skill_exists(name):
+    def read_custom_skill(self, name: str, *, user_id: str | None = None) -> str:
+        if not self.custom_skill_exists(name, user_id=user_id):
             raise FileNotFoundError(f"Custom skill '{name}' not found.")
-        return (self.get_custom_skill_dir(name) / SKILL_MD_FILE).read_text(encoding="utf-8")
+        return (self.get_custom_skill_dir(name, user_id=user_id) / SKILL_MD_FILE).read_text(encoding="utf-8")
 
-    def write_custom_skill(self, name: str, relative_path: str, content: str) -> None:
-        target = self.validate_relative_path(relative_path, self.get_custom_skill_dir(name))
+    def write_custom_skill(self, name: str, relative_path: str, content: str, *, user_id: str | None = None) -> None:
+        target = self.validate_relative_path(relative_path, self.get_custom_skill_dir(name, user_id=user_id))
         target.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
             "w",
@@ -91,7 +98,7 @@ class LocalSkillStorage(SkillStorage):
             tmp_path = Path(tmp_file.name)
         tmp_path.replace(target)
 
-    async def ainstall_skill_from_archive(self, archive_path: str | Path) -> dict:
+    async def ainstall_skill_from_archive(self, archive_path: str | Path, *, user_id: str | None = None) -> dict:
         import zipfile
 
         from deerflow.skills.installer import (
@@ -112,7 +119,7 @@ class LocalSkillStorage(SkillStorage):
         if path.suffix != ".skill":
             raise ValueError("File must have .skill extension")
 
-        custom_dir = self._host_root / "custom"
+        custom_dir = self.get_custom_skills_root(user_id=user_id)
         custom_dir.mkdir(parents=True, exist_ok=True)
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -154,14 +161,14 @@ class LocalSkillStorage(SkillStorage):
             "message": f"Skill '{skill_name}' installed successfully",
         }
 
-    def delete_custom_skill(self, name: str, *, history_meta: dict | None = None) -> None:
+    def delete_custom_skill(self, name: str, *, history_meta: dict | None = None, user_id: str | None = None) -> None:
         self.validate_skill_name(name)
-        self.ensure_custom_skill_is_editable(name)
-        target = self.get_custom_skill_dir(name)
+        self.ensure_custom_skill_is_editable(name, user_id=user_id)
+        target = self.get_custom_skill_dir(name, user_id=user_id)
         if history_meta is not None:
-            prev_content = self.read_custom_skill(name)
+            prev_content = self.read_custom_skill(name, user_id=user_id)
             try:
-                self.append_history(name, {**history_meta, "prev_content": prev_content})
+                self.append_history(name, {**history_meta, "prev_content": prev_content}, user_id=user_id)
             except OSError as e:
                 if not isinstance(e, PermissionError) and e.errno not in {errno.EACCES, errno.EPERM, errno.EROFS}:
                     raise
@@ -173,18 +180,18 @@ class LocalSkillStorage(SkillStorage):
         if target.exists():
             shutil.rmtree(target)
 
-    def append_history(self, name: str, record: dict) -> None:
+    def append_history(self, name: str, record: dict, *, user_id: str | None = None) -> None:
         self.validate_skill_name(name)
         payload = {"ts": datetime.now(UTC).isoformat(), **record}
-        history_path = self.get_skill_history_file(name)
+        history_path = self.get_skill_history_file(name, user_id=user_id)
         history_path.parent.mkdir(parents=True, exist_ok=True)
         with history_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(payload, ensure_ascii=False))
             f.write("\n")
 
-    def read_history(self, name: str) -> list[dict]:
+    def read_history(self, name: str, *, user_id: str | None = None) -> list[dict]:
         self.validate_skill_name(name)
-        history_path = self.get_skill_history_file(name)
+        history_path = self.get_skill_history_file(name, user_id=user_id)
         if not history_path.exists():
             return []
         records: list[dict] = []

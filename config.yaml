@@ -18,7 +18,7 @@ models:
   when_thinking_enabled:
     thinking_level: "high"
   when_thinking_disabled:
-    thinking_level: "minimal"
+    thinking_level: "low"
 
 - name: gemini-3-5-flash
   display_name: Gemini 3.5 Flash
@@ -158,7 +158,7 @@ memory:
   injection_enabled: true
   max_injection_tokens: 2000
 agents_api:
-  enabled: false
+  enabled: true
 skill_evolution:
   enabled: false
   moderation_model_name: null

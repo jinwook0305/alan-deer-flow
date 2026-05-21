@@ -76,10 +76,10 @@ class SkillStorage(ABC):
             if parsed_name != name:
                 raise ValueError(f"Frontmatter name '{parsed_name}' must match requested skill name '{name}'.")
 
-    def ensure_safe_support_path(self, name: str, relative_path: str) -> Path:
+    def ensure_safe_support_path(self, name: str, relative_path: str, *, user_id: str | None = None) -> Path:
         """Validate and return the resolved absolute path for a support file."""
         _ALLOWED_SUPPORT_SUBDIRS = {"references", "templates", "scripts", "assets"}
-        skill_dir = self.get_custom_skill_dir(self.validate_skill_name(name)).resolve()
+        skill_dir = self.get_custom_skill_dir(self.validate_skill_name(name), user_id=user_id).resolve()
         if not relative_path or relative_path.endswith("/"):
             raise ValueError("Supporting file path must include a filename.")
         relative = Path(relative_path)
@@ -110,49 +110,54 @@ class SkillStorage(ABC):
         """
 
     @abstractmethod
-    def _iter_skill_files(self) -> Iterable[tuple[SkillCategory, Path, Path]]:
+    def _iter_skill_files(self, *, user_id: str | None = None) -> Iterable[tuple[SkillCategory, Path, Path]]:
         """Yield ``(category, category_root, skill_md_path)`` for every SKILL.md.
+
+        Public skills are always sourced from the globally configured skills
+        root.  Custom skills are sourced from ``users/{user_id}/skills/custom/``
+        when ``user_id`` is provided; otherwise the legacy global
+        ``<root>/custom/`` location is used.
 
         Origin: extracted from directory-walk logic inside
         ``deerflow.skills.loader.load_skills``.
         """
 
     @abstractmethod
-    def read_custom_skill(self, name: str) -> str:
+    def read_custom_skill(self, name: str, *, user_id: str | None = None) -> str:
         """Read SKILL.md content for a custom skill.
 
         Origin: ``deerflow.skills.manager.read_custom_skill_content``.
         """
 
     @abstractmethod
-    def write_custom_skill(self, name: str, relative_path: str, content: str) -> None:
+    def write_custom_skill(self, name: str, relative_path: str, content: str, *, user_id: str | None = None) -> None:
         """Atomically write a text file under ``custom/<name>/<relative_path>``.
 
         Origin: ``deerflow.skills.manager.atomic_write``.
         """
 
     @abstractmethod
-    async def ainstall_skill_from_archive(self, archive_path: str | Path) -> dict:
+    async def ainstall_skill_from_archive(self, archive_path: str | Path, *, user_id: str | None = None) -> dict:
         """Async install of a skill from a ``.skill`` ZIP archive.
 
         Origin: ``deerflow.skills.installer.ainstall_skill_from_archive``.
         """
 
-    def install_skill_from_archive(self, archive_path: str | Path) -> dict:
+    def install_skill_from_archive(self, archive_path: str | Path, *, user_id: str | None = None) -> dict:
         """Sync wrapper — delegates to :meth:`ainstall_skill_from_archive`."""
         from deerflow.skills.installer import _run_async_install
 
-        return _run_async_install(self.ainstall_skill_from_archive(archive_path))
+        return _run_async_install(self.ainstall_skill_from_archive(archive_path, user_id=user_id))
 
     @abstractmethod
-    def delete_custom_skill(self, name: str, *, history_meta: dict | None = None) -> None:
+    def delete_custom_skill(self, name: str, *, history_meta: dict | None = None, user_id: str | None = None) -> None:
         """Delete a custom skill (validation + optional history + directory removal).
 
         Origin: ``app.gateway.routers.skills.delete_custom_skill`` + ``skill_manage_tool``.
         """
 
     @abstractmethod
-    def custom_skill_exists(self, name: str) -> bool:
+    def custom_skill_exists(self, name: str, *, user_id: str | None = None) -> bool:
         """Origin: ``deerflow.skills.manager.custom_skill_exists``."""
 
     @abstractmethod
@@ -160,14 +165,14 @@ class SkillStorage(ABC):
         """Origin: ``deerflow.skills.manager.public_skill_exists``."""
 
     @abstractmethod
-    def append_history(self, name: str, record: dict) -> None:
+    def append_history(self, name: str, record: dict, *, user_id: str | None = None) -> None:
         """Append a JSONL history entry for ``name``.
 
         Origin: ``deerflow.skills.manager.append_history``.
         """
 
     @abstractmethod
-    def read_history(self, name: str) -> list[dict]:
+    def read_history(self, name: str, *, user_id: str | None = None) -> list[dict]:
         """Return all history records for ``name``, oldest first.
 
         Origin: ``deerflow.skills.manager.read_history``.
@@ -181,35 +186,47 @@ class SkillStorage(ABC):
         """Origin: ``deerflow.config.skills_config.SkillsConfig.container_path`` accessor."""
         return self._container_root
 
-    def get_custom_skill_dir(self, name: str) -> Path:
+    def get_custom_skills_root(self, *, user_id: str | None = None) -> Path:
+        """Host path to the custom skills root.
+
+        When ``user_id`` is provided, returns ``{base_dir}/users/{user_id}/skills/custom/``.
+        Otherwise returns the legacy global ``<skills_root>/custom/``.
+        """
+        if user_id is not None:
+            from deerflow.config.paths import get_paths
+
+            return get_paths().user_custom_skills_dir(user_id)
+        return self.get_skills_root_path() / SkillCategory.CUSTOM.value
+
+    def get_custom_skill_dir(self, name: str, *, user_id: str | None = None) -> Path:
         """Path to ``custom/<name>``. Does not create the directory.
 
         Origin: ``deerflow.skills.manager.get_custom_skill_dir``.
         """
         normalized_name = self.validate_skill_name(name)
-        return self.get_skills_root_path() / SkillCategory.CUSTOM.value / normalized_name
+        return self.get_custom_skills_root(user_id=user_id) / normalized_name
 
-    def get_custom_skill_file(self, name: str) -> Path:
+    def get_custom_skill_file(self, name: str, *, user_id: str | None = None) -> Path:
         """Path to ``custom/<name>/SKILL.md``.
 
         Origin: ``deerflow.skills.manager.get_custom_skill_file``.
         """
         normalized_name = self.validate_skill_name(name)
-        return self.get_custom_skill_dir(normalized_name) / SKILL_MD_FILE
+        return self.get_custom_skill_dir(normalized_name, user_id=user_id) / SKILL_MD_FILE
 
-    def get_skill_history_file(self, name: str) -> Path:
+    def get_skill_history_file(self, name: str, *, user_id: str | None = None) -> Path:
         """Path to ``custom/.history/<name>.jsonl``. Does not create parents.
 
         Origin: ``deerflow.skills.manager.get_skill_history_file``.
         """
         normalized_name = self.validate_skill_name(name)
-        return self.get_skills_root_path() / SkillCategory.CUSTOM.value / ".history" / f"{normalized_name}.jsonl"
+        return self.get_custom_skills_root(user_id=user_id) / ".history" / f"{normalized_name}.jsonl"
 
     # ------------------------------------------------------------------
     # Final template-method flows
     # ------------------------------------------------------------------
 
-    def load_skills(self, *, enabled_only: bool = False) -> list[Skill]:
+    def load_skills(self, *, enabled_only: bool = False, user_id: str | None = None) -> list[Skill]:
         """Discover all skills, merge enabled state, sort and optionally filter.
 
         Origin: ``deerflow.skills.loader.load_skills``.
@@ -217,7 +234,7 @@ class SkillStorage(ABC):
         from deerflow.skills.parser import parse_skill_file
 
         skills_by_name: dict[str, Skill] = {}
-        for category, category_root, md_path in self._iter_skill_files():
+        for category, category_root, md_path in self._iter_skill_files(user_id=user_id):
             skill = parse_skill_file(
                 md_path,
                 category=category,
@@ -245,9 +262,9 @@ class SkillStorage(ABC):
         skills.sort(key=lambda s: s.name)
         return skills
 
-    def ensure_custom_skill_is_editable(self, name: str) -> None:
+    def ensure_custom_skill_is_editable(self, name: str, *, user_id: str | None = None) -> None:
         """Origin: ``deerflow.skills.manager.ensure_custom_skill_is_editable``."""
-        if self.custom_skill_exists(name):
+        if self.custom_skill_exists(name, user_id=user_id):
             return
         if self.public_skill_exists(name):
             raise ValueError(f"'{name}' is a built-in skill. To customise it, create a new skill with the same name under skills/custom/.")
